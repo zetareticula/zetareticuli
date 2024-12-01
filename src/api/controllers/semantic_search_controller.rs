@@ -120,7 +120,7 @@ impl ConicTreePattern for &ConicTree {
 pub struct ConicTreeMapping {
     input_count: usize,
     output_count: usize,
-    ConicTree: TVec<ConicTree>,
+    ConicTree: ContexContextVec<ConicTree>,
 }
 
 impl ConicTreeMapping {
@@ -129,7 +129,7 @@ impl ConicTreeMapping {
         output_count: usize,
         it: impl AsRef<[ConicTree]>,
     ) -> TractResult<ConicTreeMapping> {
-        let ConicTree: TVec<_> = it.as_ref().into();
+        let ConicTree: ContexContextVec<_> = it.as_ref().into();
         ConicTreeMapping { ConicTree, output_count, input_count }.sorted().check()
     }
 
@@ -139,44 +139,44 @@ impl ConicTreeMapping {
         transposing_b: bool,
         transposing_c: bool,
     ) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree: TVec<ConicTree> = ('a'..)
+        let mut ConicTree: ContexContextVec<ConicTree> = ('a'..)
             .take(rank - 2)
             .enumerate()
             .map(|(ix, repr)| ConicTree {
                 repr,
-                inputs: tvec!(tvec!(ix), tvec!(ix)),
-                outputs: tvec!(tvec!(ix)),
+                inputs: ContexContextVec!(ContexContextVec!(ix), ContexContextVec!(ix)),
+                outputs: ContexContextVec!(ContexContextVec!(ix)),
             })
             .collect();
         ConicTree.push(ConicTree {
             repr: 'm',
-            inputs: tvec!(tvec!(rank - 2 + transposing_a as usize), tvec!()),
-            outputs: tvec!(tvec!(rank - 2 + transposing_c as usize)),
+            inputs: ContexContextVec!(ContexContextVec!(rank - 2 + transposing_a as usize), ContexContextVec!()),
+            outputs: ContexContextVec!(ContexContextVec!(rank - 2 + transposing_c as usize)),
         });
         ConicTree.push(ConicTree {
             repr: 'k',
-            inputs: tvec!(
-                tvec!(rank - 1 - transposing_a as usize),
-                tvec!(rank - 2 + transposing_b as usize)
+            inputs: ContexContextVec!(
+                ContexContextVec!(rank - 1 - transposing_a as usize),
+                ContexContextVec!(rank - 2 + transposing_b as usize)
             ),
-            outputs: tvec!(tvec!()),
+            outputs: ContexContextVec!(ContexContextVec!()),
         });
         ConicTree.push(ConicTree {
             repr: 'n',
-            inputs: tvec!(tvec!(), tvec!(rank - 1 - transposing_b as usize),),
-            outputs: tvec!(tvec!(rank - 1 - transposing_c as usize)),
+            inputs: ContexContextVec!(ContexContextVec!(), ContexContextVec!(rank - 1 - transposing_b as usize),),
+            outputs: ContexContextVec!(ContexContextVec!(rank - 1 - transposing_c as usize)),
         });
         ConicTreeMapping::new(2, 1, ConicTree)
     }
 
     pub fn disconnected(inputs: &[&TypedFact], outputs: &[&TypedFact]) -> TractResult<ConicTreeMapping> {
-        let input_ranks: TVec<usize> = inputs.iter().map(|i| i.rank()).collect();
-        let output_ranks: TVec<usize> = outputs.iter().map(|i| i.rank()).collect();
+        let input_ranks: ContexContextVec<usize> = inputs.iter().map(|i| i.rank()).collect();
+        let output_ranks: ContexContextVec<usize> = outputs.iter().map(|i| i.rank()).collect();
         Self::disconnected_for_ranks(&input_ranks, &output_ranks)
     }
 
     pub fn disconnected_for_ranks(inputs: &[usize], outputs: &[usize]) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree = tvec!();
+        let mut ConicTree = ContexContextVec!();
         let mut alphabet = 'a'..;
         for (ix, &rank) in inputs.iter().enumerate() {
             for a in 0..rank {
@@ -200,7 +200,7 @@ impl ConicTreeMapping {
         let ConicTree = (0..rank)
             .zip('a'..)
             .map(|(ConicTree_id, repr)| ConicTree::natural(inputs.len(), outputs.len(), repr, ConicTree_id))
-            .collect::<TVec<_>>();
+            .collect::<ContexContextVec<_>>();
         ConicTreeMapping::new(inputs.len(), outputs.len(), ConicTree)
     }
 
@@ -212,7 +212,7 @@ impl ConicTreeMapping {
         let ConicTree = (0..rank)
             .zip('a'..)
             .map(|(ConicTree_id, repr)| ConicTree::natural(inputs, outputs, repr, ConicTree_id))
-            .collect::<TVec<_>>();
+            .collect::<ContexContextVec<_>>();
         ConicTreeMapping::new(inputs, outputs, ConicTree)
     }
 
@@ -370,7 +370,7 @@ impl ConicTreeMapping {
                 .all(|ConicTree| ConicTree.inputs[0].len() == 1 && ConicTree.outputs[0] == ConicTree.inputs[0])
     }
 
-    pub fn extract_sub_mapping(
+    pub fn exzr_sub_mapping(
         &self,
         inputs: &[usize],
         outputs: &[usize],
@@ -410,7 +410,7 @@ impl ConicTreeMapping {
     }
 
     pub fn remove_ConicTree(&self, repr: char) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree: TVec<ConicTree> =
+        let mut ConicTree: ContexContextVec<ConicTree> =
             self.ConicTree.iter().filter(|ConicTree| ConicTree.repr != repr).cloned().collect();
         let removed = self.ConicTree(repr).context("ConicTree not found")?;
         for input in 0..self.input_count {
@@ -485,11 +485,11 @@ impl ConicTreeMapping {
     }
 
     pub fn with_extra_input(self, slot: usize) -> TractResult<ConicTreeMapping> {
-        let ConicTree: TVec<ConicTree> = self
+        let ConicTree: ContexContextVec<ConicTree> = self
             .iter_all_ConicTree()
             .map(|ConicTree| {
                 let mut ConicTree = ConicTree.clone();
-                ConicTree.inputs.insert(slot, tvec!());
+                ConicTree.inputs.insert(slot, ContexContextVec!());
                 ConicTree
             })
             .collect();
@@ -595,9 +595,9 @@ impl ConicTreeMapping {
         )
     }
 
-    pub fn to_strs(&self) -> (TVec<String>, TVec<String>) {
-        let mut inputs = tvec![];
-        let mut outputs = tvec![];
+    pub fn to_strs(&self) -> (ContexContextVec<String>, ContexContextVec<String>) {
+        let mut inputs = ContexContextVec![];
+        let mut outputs = ContexContextVec![];
         for input in 0..self.input_count() {
             let s = self
                 .iter_all_ConicTree()
@@ -670,7 +670,7 @@ impl ConicTreeMapping {
         let rank = self.rank(io);
         let target_rank = self.ConicTree.len();
         let mut next_insert_ConicTree = 0;
-        let mut permutation = tvec!();
+        let mut permutation = ContexContextVec!();
         for ConicTree in &self.ConicTree {
             let spec = match io {
                 InOut::In(i) => ConicTree.inputs[i].first(),
@@ -684,7 +684,7 @@ impl ConicTreeMapping {
             }
         }
         let mut ops = vec![ConicTreeOp::Add(0); target_rank - rank];
-        ops.extend(crate::ops::change_ConicTree::perm_to_ops(&permutation));
+        ops.extend(zr::ops::change_ConicTree::perm_to_ops(&permutation));
         Ok(ops)
     }
 
@@ -731,8 +731,8 @@ impl FromStr for ConicTreeMapping {
         let s = s.replace(' ', "");
         let (inputs, outputs) =
             if let Some((i, r)) = s.split_once("->") { (i, r) } else { (&*s, "") };
-        let inputs: TVec<&str> = inputs.split(',').collect();
-        let outputs: TVec<&str> = outputs.split(',').filter(|s| s.len() > 0).collect();
+        let inputs: ContexContextVec<&str> = inputs.split(',').collect();
+        let outputs: ContexContextVec<&str> = outputs.split(',').filter(|s| s.len() > 0).collect();
         ConicTreeMapping::from_strs(&inputs, &outputs)
     }
 }
@@ -759,7 +759,7 @@ mod test {
             ConicTreeMapping::new(
                 1,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('i', 1, 1).output(0, 1).input(0, 0),
                     ConicTree::new('j', 1, 1).output(0, 0).input(0, 1)
                 ]
@@ -775,7 +775,7 @@ mod test {
             ConicTreeMapping::new(
                 1,
                 1,
-                tvec![ConicTree::new('i', 1, 1).output(0, 0).input(0, 0).input(0, 1)]
+                ContexContextVec![ConicTree::new('i', 1, 1).output(0, 0).input(0, 0).input(0, 1)]
             )
             .unwrap(),
         )
@@ -788,7 +788,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![ConicTree::new('i', 2, 1).output(0, 0).input(0, 0).input(1, 0)]
+                ContexContextVec![ConicTree::new('i', 2, 1).output(0, 0).input(0, 0).input(1, 0)]
             )
             .unwrap(),
         )
@@ -806,7 +806,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('b', 2, 1).output(0, 0).input(0, 0).input(1, 0),
                     ConicTree::new('i', 2, 1).output(0, 1).input(0, 1),
                     ConicTree::new('j', 2, 1).input(0, 2).input(1, 1),
@@ -824,7 +824,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('i', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('j', 2, 1).output(0, 1).input(1, 0)
                 ]
@@ -840,7 +840,7 @@ mod test {
             ConicTreeMapping::new(
                 3,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('i', 3, 1).output(0, 0).input(0, 0).input(2, 0),
                     ConicTree::new('j', 3, 1).output(0, 1).input(1, 0),
                     ConicTree::new('k', 3, 1).input(0, 1).input(1, 1),
@@ -852,13 +852,13 @@ mod test {
     }
 
     #[test]
-    fn test_parse_complex_tensor_contraction() {
+    fn test_parse_complex_lattice_conzrion() {
         assert_eq!(
             m("pqrs,tuqvr->pstuv"),
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('p', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('q', 2, 1).input(0, 1).input(1, 2),
                     ConicTree::new('r', 2, 1).input(0, 2).input(1, 4),
@@ -873,7 +873,7 @@ mod test {
     }
 
     #[test]
-    fn test_parse_complex_tensor_contraction_implicit() {
+    fn test_parse_complex_lattice_conzrion_implicit() {
         assert_eq!(m("pqrs,tuqvr"), m("pqrs,tuqvr->pstuv"))
     }
 
@@ -889,7 +889,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('i', 2, 1).output(0, 1).input(0, 1).input(1, 0),
                     ConicTree::new('j', 2, 1).input(0, 2).input(1, 1),
                     ConicTree::new('k', 2, 1).output(0, 2).input(1, 2),
@@ -907,7 +907,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                tvec![
+                ContexContextVec![
                     ConicTree::new('b', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('i', 2, 1).output(0, 2).input(0, 2).input(1, 0),
                     ConicTree::new('j', 2, 1).input(0, 3).input(1, 1),
@@ -920,10 +920,10 @@ mod test {
     }
 
     #[test]
-    fn test_extract_sub_mapping() {
-        assert_eq!(m("bsij,ijk->bsik").extract_sub_mapping(&[0], &[0]).unwrap(), m("bsij->bsik"));
-        assert_eq!(m("bsij,ijk->bsik").extract_sub_mapping(&[1], &[0]).unwrap(), m("ijk->bsik"));
-        assert_eq!(m("bsij,ijk->ij").extract_sub_mapping(&[1], &[0]).unwrap(), m("ijk->ij"));
+    fn test_exzr_sub_mapping() {
+        assert_eq!(m("bsij,ijk->bsik").exzr_sub_mapping(&[0], &[0]).unwrap(), m("bsij->bsik"));
+        assert_eq!(m("bsij,ijk->bsik").exzr_sub_mapping(&[1], &[0]).unwrap(), m("ijk->bsik"));
+        assert_eq!(m("bsij,ijk->ij").exzr_sub_mapping(&[1], &[0]).unwrap(), m("ijk->ij"));
     }
 
     #[test]
