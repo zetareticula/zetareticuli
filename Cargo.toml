@@ -1,0 +1,30 @@
+[package]
+name = "zetareticuli"
+version = "0.1.0"
+edition = "2018"
+
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9.34+deprecated"
+serde_cbor = "0.11.2"
+serde_toml = "0.0.1"
+serde_xml = "0.9.1"
+serde_urlencoded = "0.7.1"
+serde_qs = "0.13.0"
+
+[dev-dependencies]
+serde_test = "1.0"
+
+[features]
+default = ["serde_json", "serde_yaml", "serde_cbor", "serde_toml", "serde_xml", "serde_urlencoded", "serde_qs"]
+serde_json = ["serde_json"]
+serde_yaml = ["serde_yaml"]
+serde_cbor = ["serde_cbor"]
+
+
+

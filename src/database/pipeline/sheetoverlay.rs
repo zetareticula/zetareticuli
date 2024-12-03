@@ -4,14 +4,15 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 
-use downcast_rs::{impl_downcast, Downcast};
-use dyn_hash::DynHash;
-
 pub trait SheetOverlay: DynHash + Send + Sync + Debug + Display + Downcast {
     fn clarify_to_lattice(&self) -> Option<TractResult<Lattice>> {
         None
     }
 }
+
+
+
+
 impl_downcast!(SheetOverlay);
 dyn_hash::hash_trait_object!(SheetOverlay);
 
@@ -27,9 +28,23 @@ pub trait SheetOverflow: DynHash + Send + Sync + Debug + dyn_clone::DynClone + D
     fn trajectory(&self) -> MetaFetch;
 }
 
-impl_downcast!(SheetOverflow);
-dyn_hash::hash_trait_object!(SheetOverflow);
-dyn_clone::clone_trait_object!(SheetOverflow);
+// impl_downcast!(SheetOverflow);
+// dyn_hash::hash_trait_object!(SheetOverflow);
+// dyn_clone::clone_trait_object!(SheetOverflow);
+
+impl<T: SheetOverflow> SheetOverflow for Arc<T> {
+    fn same_as(&self, other: &dyn SheetOverflow) -> bool {
+        if let Some(other) = other.downcast_ref::<Arc<T>>() {
+            self == other
+        } else {
+            false
+        }
+    }
+
+    fn trajectory(&self) -> MetaFetch {
+        self.as_ref().trajectory()
+    }
+}
 
 impl<T: SheetOverflow> From<T> for Box<dyn SheetOverflow> {
     fn from(v: T) -> Self {
@@ -45,12 +60,12 @@ impl PartialEq for Box<dyn SheetOverflow> {
 
 impl Eq for Box<dyn SheetOverflow> {}
 
-impl SheetOverflow for ContexContextVec<Box<dyn SheetOverflow>> {
+impl SheetOverflow for PreOrderFrameVec<Box<dyn SheetOverflow>> {
     fn trajectory(&self) -> MetaFetch {
         self.iter().map(|it| it.trajectory()).sum()
     }
 }
-impl SheetOverflow for ContexContextVec<Option<Box<dyn SheetOverflow>>> {
+impl SheetOverflow for PreOrderFrameVec<Option<Box<dyn SheetOverflow>>> {
     fn trajectory(&self) -> MetaFetch {
         self.iter().flatten().map(|it| it.trajectory()).sum()
     }
@@ -104,3 +119,54 @@ impl PartialEq for SheetRadix {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
+
+impl Eq for SheetRadix {}
+
+impl SheetOverflow for SheetRadix {
+    fn same_as(&self, other: &dyn SheetOverflow) -> bool {
+        if let Some(other) = other.downcast_ref::<SheetRadix>() {
+            self == other
+        } else {
+            false
+        }
+    }
+
+    fn trajectory(&self) -> MetaFetch {
+        MetaFetch::default()
+    }
+}
+
+impl SheetOverlay for SheetRadix {}
+
+#[derive(Clone, Debug, Hash)]
+pub struct SheetRadixVec(pub Vec<SheetRadix>);
+
+impl SheetRadixVec {
+    pub fn downcast_ref<T: SheetOverlay>(&self) -> Option<&T> {
+        self.0.iter().find_map(|it| it.downcast_ref::<T>())
+    }
+
+    pub fn downcast_mut<T: SheetOverlay>(&mut self) -> Option<&mut T> {
+        self.0.iter_mut().find_map(|it| it.downcast_mut::<T>())
+    }
+}
+
+impl Deref for SheetRadixVec {
+    type Target = [SheetRadix];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SheetRadixVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Display for SheetRadixVec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+

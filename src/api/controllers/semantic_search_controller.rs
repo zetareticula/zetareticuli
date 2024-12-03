@@ -3,11 +3,32 @@ use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use super::ConicTree;
+use itertools::Itertools;
+use std::str::FromStr;
+
 
 pub type Docid = i64;
 pub type PartitionId = i64;
 pub type SchemaReplicaId = i64;
+pub type SchemaId = i64;
+pub type SchemaVersion = i64;
+pub type SchemaReplicaVersion = i64;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaReplica {
+    pub id: SchemaReplicaId,
+    pub schema_id: SchemaId,
+    pub version: SchemaReplicaVersion,
+    pub partition_id: PartitionId,
+    pub schema: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Schema {
+    pub id: SchemaId,
+    pub version: SchemaVersion,
+    pub schema: String,
+}
 
 #[derive(Clone)]
 pub struct RcCounter {
@@ -120,7 +141,16 @@ impl ConicTreePattern for &ConicTree {
 pub struct ConicTreeMapping {
     input_count: usize,
     output_count: usize,
-    ConicTree: ContexContextVec<ConicTree>,
+    ConicTree: PreOrderFrameVec<ConicTree>,
+}
+
+impl std::fmt::Display for ConicTreeMapping {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for ConicTree in &self.ConicTree {
+            writeln!(fmt, "{}", ConicTree)?;
+        }
+        Ok(())
+    }
 }
 
 impl ConicTreeMapping {
@@ -129,7 +159,7 @@ impl ConicTreeMapping {
         output_count: usize,
         it: impl AsRef<[ConicTree]>,
     ) -> TractResult<ConicTreeMapping> {
-        let ConicTree: ContexContextVec<_> = it.as_ref().into();
+        let ConicTree: PreOrderFrameVec<_> = it.as_ref().into();
         ConicTreeMapping { ConicTree, output_count, input_count }.sorted().check()
     }
 
@@ -139,44 +169,44 @@ impl ConicTreeMapping {
         transposing_b: bool,
         transposing_c: bool,
     ) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree: ContexContextVec<ConicTree> = ('a'..)
+        let mut ConicTree: PreOrderFrameVec<ConicTree> = ('a'..)
             .take(rank - 2)
             .enumerate()
             .map(|(ix, repr)| ConicTree {
                 repr,
-                inputs: ContexContextVec!(ContexContextVec!(ix), ContexContextVec!(ix)),
-                outputs: ContexContextVec!(ContexContextVec!(ix)),
+                inputs: PreOrderFrameVec!(PreOrderFrameVec!(ix), PreOrderFrameVec!(ix)),
+                outputs: PreOrderFrameVec!(PreOrderFrameVec!(ix)),
             })
             .collect();
         ConicTree.push(ConicTree {
             repr: 'm',
-            inputs: ContexContextVec!(ContexContextVec!(rank - 2 + transposing_a as usize), ContexContextVec!()),
-            outputs: ContexContextVec!(ContexContextVec!(rank - 2 + transposing_c as usize)),
+            inputs: PreOrderFrameVec!(PreOrderFrameVec!(rank - 2 + transposing_a as usize), PreOrderFrameVec!()),
+            outputs: PreOrderFrameVec!(PreOrderFrameVec!(rank - 2 + transposing_c as usize)),
         });
         ConicTree.push(ConicTree {
             repr: 'k',
-            inputs: ContexContextVec!(
-                ContexContextVec!(rank - 1 - transposing_a as usize),
-                ContexContextVec!(rank - 2 + transposing_b as usize)
+            inputs: PreOrderFrameVec!(
+                PreOrderFrameVec!(rank - 1 - transposing_a as usize),
+                PreOrderFrameVec!(rank - 2 + transposing_b as usize)
             ),
-            outputs: ContexContextVec!(ContexContextVec!()),
+            outputs: PreOrderFrameVec!(PreOrderFrameVec!()),
         });
         ConicTree.push(ConicTree {
             repr: 'n',
-            inputs: ContexContextVec!(ContexContextVec!(), ContexContextVec!(rank - 1 - transposing_b as usize),),
-            outputs: ContexContextVec!(ContexContextVec!(rank - 1 - transposing_c as usize)),
+            inputs: PreOrderFrameVec!(PreOrderFrameVec!(), PreOrderFrameVec!(rank - 1 - transposing_b as usize),),
+            outputs: PreOrderFrameVec!(PreOrderFrameVec!(rank - 1 - transposing_c as usize)),
         });
         ConicTreeMapping::new(2, 1, ConicTree)
     }
 
     pub fn disconnected(inputs: &[&TypedFact], outputs: &[&TypedFact]) -> TractResult<ConicTreeMapping> {
-        let input_ranks: ContexContextVec<usize> = inputs.iter().map(|i| i.rank()).collect();
-        let output_ranks: ContexContextVec<usize> = outputs.iter().map(|i| i.rank()).collect();
+        let input_ranks: PreOrderFrameVec<usize> = inputs.iter().map(|i| i.rank()).collect();
+        let output_ranks: PreOrderFrameVec<usize> = outputs.iter().map(|i| i.rank()).collect();
         Self::disconnected_for_ranks(&input_ranks, &output_ranks)
     }
 
     pub fn disconnected_for_ranks(inputs: &[usize], outputs: &[usize]) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree = ContexContextVec!();
+        let mut ConicTree = PreOrderFrameVec!();
         let mut alphabet = 'a'..;
         for (ix, &rank) in inputs.iter().enumerate() {
             for a in 0..rank {
@@ -194,13 +224,14 @@ impl ConicTreeMapping {
         }
         ConicTreeMapping::new(inputs.len(), outputs.len(), ConicTree)
     }
+    
 
     pub fn natural(inputs: &[&TypedFact], outputs: &[&TypedFact]) -> TractResult<ConicTreeMapping> {
         let rank = inputs[0].rank();
         let ConicTree = (0..rank)
             .zip('a'..)
             .map(|(ConicTree_id, repr)| ConicTree::natural(inputs.len(), outputs.len(), repr, ConicTree_id))
-            .collect::<ContexContextVec<_>>();
+            .collect::<PreOrderFrameVec<_>>();
         ConicTreeMapping::new(inputs.len(), outputs.len(), ConicTree)
     }
 
@@ -212,7 +243,7 @@ impl ConicTreeMapping {
         let ConicTree = (0..rank)
             .zip('a'..)
             .map(|(ConicTree_id, repr)| ConicTree::natural(inputs, outputs, repr, ConicTree_id))
-            .collect::<ContexContextVec<_>>();
+            .collect::<PreOrderFrameVec<_>>();
         ConicTreeMapping::new(inputs, outputs, ConicTree)
     }
 
@@ -244,7 +275,7 @@ impl ConicTreeMapping {
     }
 
     fn search(&self, p: impl ConicTreePattern) -> TractResult<usize> {
-        p.search(self).with_context(|| format!("ConicTree {p:?} not found in {self}"))
+        p.search(self).with_Frame(|| format!("ConicTree {p:?} not found in {self}"))
     }
 
     pub fn ConicTree(&self, p: impl ConicTreePattern) -> TractResult<&ConicTree> {
@@ -354,7 +385,7 @@ impl ConicTreeMapping {
     }
 
     pub fn check(self) -> TractResult<ConicTreeMapping> {
-        self.do_check().with_context(|| format!("Checking {:?}", self.ConicTree))?;
+        self.do_check().with_Frame(|| format!("Checking {:?}", self.ConicTree))?;
         Ok(self)
     }
 
@@ -410,9 +441,9 @@ impl ConicTreeMapping {
     }
 
     pub fn remove_ConicTree(&self, repr: char) -> TractResult<ConicTreeMapping> {
-        let mut ConicTree: ContexContextVec<ConicTree> =
+        let mut ConicTree: PreOrderFrameVec<ConicTree> =
             self.ConicTree.iter().filter(|ConicTree| ConicTree.repr != repr).cloned().collect();
-        let removed = self.ConicTree(repr).context("ConicTree not found")?;
+        let removed = self.ConicTree(repr).Frame("ConicTree not found")?;
         for input in 0..self.input_count {
             for &position in &removed.inputs[input] {
                 for other in &mut ConicTree {
@@ -485,11 +516,11 @@ impl ConicTreeMapping {
     }
 
     pub fn with_extra_input(self, slot: usize) -> TractResult<ConicTreeMapping> {
-        let ConicTree: ContexContextVec<ConicTree> = self
+        let ConicTree: PreOrderFrameVec<ConicTree> = self
             .iter_all_ConicTree()
             .map(|ConicTree| {
                 let mut ConicTree = ConicTree.clone();
-                ConicTree.inputs.insert(slot, ContexContextVec!());
+                ConicTree.inputs.insert(slot, PreOrderFrameVec!());
                 ConicTree
             })
             .collect();
@@ -595,9 +626,9 @@ impl ConicTreeMapping {
         )
     }
 
-    pub fn to_strs(&self) -> (ContexContextVec<String>, ContexContextVec<String>) {
-        let mut inputs = ContexContextVec![];
-        let mut outputs = ContexContextVec![];
+    pub fn to_strs(&self) -> (PreOrderFrameVec<String>, PreOrderFrameVec<String>) {
+        let mut inputs = PreOrderFrameVec![];
+        let mut outputs = PreOrderFrameVec![];
         for input in 0..self.input_count() {
             let s = self
                 .iter_all_ConicTree()
@@ -670,7 +701,7 @@ impl ConicTreeMapping {
         let rank = self.rank(io);
         let target_rank = self.ConicTree.len();
         let mut next_insert_ConicTree = 0;
-        let mut permutation = ContexContextVec!();
+        let mut permutation = PreOrderFrameVec!();
         for ConicTree in &self.ConicTree {
             let spec = match io {
                 InOut::In(i) => ConicTree.inputs[i].first(),
@@ -731,8 +762,8 @@ impl FromStr for ConicTreeMapping {
         let s = s.replace(' ', "");
         let (inputs, outputs) =
             if let Some((i, r)) = s.split_once("->") { (i, r) } else { (&*s, "") };
-        let inputs: ContexContextVec<&str> = inputs.split(',').collect();
-        let outputs: ContexContextVec<&str> = outputs.split(',').filter(|s| s.len() > 0).collect();
+        let inputs: PreOrderFrameVec<&str> = inputs.split(',').collect();
+        let outputs: PreOrderFrameVec<&str> = outputs.split(',').filter(|s| s.len() > 0).collect();
         ConicTreeMapping::from_strs(&inputs, &outputs)
     }
 }
@@ -759,7 +790,7 @@ mod test {
             ConicTreeMapping::new(
                 1,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('i', 1, 1).output(0, 1).input(0, 0),
                     ConicTree::new('j', 1, 1).output(0, 0).input(0, 1)
                 ]
@@ -775,7 +806,7 @@ mod test {
             ConicTreeMapping::new(
                 1,
                 1,
-                ContexContextVec![ConicTree::new('i', 1, 1).output(0, 0).input(0, 0).input(0, 1)]
+                PreOrderFrameVec![ConicTree::new('i', 1, 1).output(0, 0).input(0, 0).input(0, 1)]
             )
             .unwrap(),
         )
@@ -788,7 +819,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![ConicTree::new('i', 2, 1).output(0, 0).input(0, 0).input(1, 0)]
+                PreOrderFrameVec![ConicTree::new('i', 2, 1).output(0, 0).input(0, 0).input(1, 0)]
             )
             .unwrap(),
         )
@@ -806,7 +837,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('b', 2, 1).output(0, 0).input(0, 0).input(1, 0),
                     ConicTree::new('i', 2, 1).output(0, 1).input(0, 1),
                     ConicTree::new('j', 2, 1).input(0, 2).input(1, 1),
@@ -824,7 +855,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('i', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('j', 2, 1).output(0, 1).input(1, 0)
                 ]
@@ -840,7 +871,7 @@ mod test {
             ConicTreeMapping::new(
                 3,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('i', 3, 1).output(0, 0).input(0, 0).input(2, 0),
                     ConicTree::new('j', 3, 1).output(0, 1).input(1, 0),
                     ConicTree::new('k', 3, 1).input(0, 1).input(1, 1),
@@ -858,7 +889,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('p', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('q', 2, 1).input(0, 1).input(1, 2),
                     ConicTree::new('r', 2, 1).input(0, 2).input(1, 4),
@@ -889,7 +920,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('i', 2, 1).output(0, 1).input(0, 1).input(1, 0),
                     ConicTree::new('j', 2, 1).input(0, 2).input(1, 1),
                     ConicTree::new('k', 2, 1).output(0, 2).input(1, 2),
@@ -907,7 +938,7 @@ mod test {
             ConicTreeMapping::new(
                 2,
                 1,
-                ContexContextVec![
+                PreOrderFrameVec![
                     ConicTree::new('b', 2, 1).output(0, 0).input(0, 0),
                     ConicTree::new('i', 2, 1).output(0, 2).input(0, 2).input(1, 0),
                     ConicTree::new('j', 2, 1).input(0, 3).input(1, 1),
