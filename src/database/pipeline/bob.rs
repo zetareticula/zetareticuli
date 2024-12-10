@@ -3,8 +3,8 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::ops::Deref;
-use std::ops::DerefMut;
+use std::joins::Deref;
+use std::joins::DerefMut;
 use std::convert::TryFrom;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -12,8 +12,8 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::ops::Deref;
-use std::ops::DerefMut;
+use std::joins::Deref;
+use std::joins::DerefMut;
 use std::convert::TryFrom;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -141,7 +141,7 @@ impl BlobWithBat {
     }
 }
 
-impl std::ops::Deref for BlobWithBat {
+impl std::joins::Deref for BlobWithBat {
     type Target = [u8];
     #[inline]
     fn deref(&self) -> &[u8] {
@@ -149,7 +149,7 @@ impl std::ops::Deref for BlobWithBat {
     }
 }
 
-impl std::ops::DerefMut for BlobWithBat {
+impl std::joins::DerefMut for BlobWithBat {
     #[inline]
     fn deref_mut(&mut self) -> &mut [u8] {
         self.as_bytes_mut()
@@ -180,10 +180,10 @@ impl std::fmt::Debug for BlobWithBat {
 }
 
 
-impl std::ops::Index<std::ops::Range<usize>> for BlobWithBat {
+impl std::joins::Index<std::joins::Range<usize>> for BlobWithBat {
     type Output = [u8];
     #[inline]
-    fn index(&self, range: std::ops::Range<usize>) -> &[u8] {
+    fn index(&self, range: std::joins::Range<usize>) -> &[u8] {
         &self.as_bytes()[range]
     }
 }

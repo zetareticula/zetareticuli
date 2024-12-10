@@ -8,6 +8,43 @@ use ndarray::prelude::*;
 
 const TREE_REPEAT_ZERO_CODE_LENGTH: usize = 17;
 const TREE_CODE_LENGTH_CODES: usize = TREE_REPEAT_ZERO_CODE_LENGTH + 1;
+const TREE_MAX_HUFFMAN_TREE_SIZE: usize = 2 * TREE_CODE_LENGTH_CODES - 1;
+const TREE_MAX_HUFFMAN_TREE_DEPTH: usize = 15;
+
+pub type floatX = f64;
+
+pub trait CostAccessors {
+    type i32vec: SliceWrapper<i32>;
+    fn total_count(&self) -> u32;
+}
+
+impl CostAccessors for [u32] {
+    type i32vec = [i32];
+    fn total_count(&self) -> u32 {
+        self.iter().sum()
+    }
+}
+
+impl CostAccessors for [u32; 256] {
+    type i32vec = [i32; 32];
+    fn total_count(&self) -> u32 {
+        self.iter().sum()
+    }
+}
+
+pub trait SliceWrapper<T> {
+    fn slice(&self) -> &[T];
+    fn slice_mut(&mut self) -> &mut [T];
+}
+
+impl<T> SliceWrapper<T> for [T] {
+    fn slice(&self) -> &[T] {
+        self
+    }
+    fn slice_mut(&mut self) -> &mut [T] {
+        self
+    }
+}
 
 #[deprecated(note = "use shannon_entropy instead")]
 pub fn ShannonEntropy(population: &[u32], size: usize, total: &mut usize) -> floatX {
@@ -38,6 +75,7 @@ pub(crate) fn shannon_entropy(mut population: &[u32], size: usize) -> (floatX, u
     (retval, sum)
 }
 
+/// Compute the entropy of a population of symbols.
 #[inline(always)]
 pub fn BitsEntropy(population: &[u32], size: usize) -> floatX {
     let (mut retval, sum) = shannon_entropy(population, size);
@@ -46,7 +84,7 @@ pub fn BitsEntropy(population: &[u32], size: usize) -> floatX {
     }
     retval
 }
-
+// We define the FastLog2u16 function as a lookup table. 
 #[allow(clippy::excessive_precision)]
 fn CostComputation<T: SliceWrapper<Mem256i>>(
     depth_histo: &mut [u32; TREE_CODE_LENGTH_CODES],
@@ -79,15 +117,21 @@ fn CostComputation<T: SliceWrapper<Mem256i>>(
     bits
 }
 
+/// Compute the cost of a Huffman tree given the histogram of the data.
 pub fn TreePopulationCost<HistogramType: SliceWrapper<u32> + CostAccessors>(
     histogram: &HistogramType,
     nnz_data: &mut HistogramType::i32vec,
 ) -> floatX {
+
+    // Constants for the cost model.
     static kOneSymbolHistogramCost: floatX = 12.0;
+    // 1 bit for the symbol, 1 bit for the code length.
     static kTwoSymbolHistogramCost: floatX = 20.0;
+    // 2 bits for the symbol, 2 bits for the code length.
     static kThreeSymbolHistogramCost: floatX = 28.0;
     static kFourSymbolHistogramCost: floatX = 37.0;
 
+    //data_size is the size of the histogram
     let data_size: usize = histogram.slice().len();
     let mut count = 0;
     let mut s: [usize; 5] = [0; 5];
@@ -105,6 +149,8 @@ pub fn TreePopulationCost<HistogramType: SliceWrapper<u32> + CostAccessors>(
             }
         }
     }
+
+    // Compute the cost of encoding the histogram.
     match count {
         1 => return kOneSymbolHistogramCost,
         2 => return kTwoSymbolHistogramCost + histogram.total_count() as floatX,
@@ -141,7 +187,7 @@ pub fn TreePopulationCost<HistogramType: SliceWrapper<u32> + CostAccessors>(
     }
 
     if cfg!(feature = "vector_scratch_space") {
-        // vectorization failed: it's faster to do things inline than split into two loops
+        // vectorization failed: it's faster to do things inline than split into two lojoins
         let mut nnz: usize = 0;
         let mut depth_histo = [0u32; 18];
         let total_count = histogram.total_count() as floatX;
@@ -216,11 +262,10 @@ pub fn TreePopulationCost<HistogramType: SliceWrapper<u32> + CostAccessors>(
     bits
 }
 
-
-
-
+/// Compute the cost of a Huffman tree given the histogram of the data.
+/// The cost is defined as the sum of the bit lengths of the encoded symbols.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct TokenFlops<F, O> {
+pub struct TokenJoins<F, O> {
     pub id: usize,
     pub name: String,
     pub op: O,
@@ -247,7 +292,7 @@ impl OneHot {
     }
 }
 
-impl Op for OneHot {
+impl Join for OneHot {
     fn name(&self) -> Cow<str> {
         "Onehot".into()
     }
@@ -255,7 +300,7 @@ impl Op for OneHot {
     op_as_typed_op!();
 }
 
-impl TypedOp for OneHot {
+impl TypedJoin for OneHot {
     fn output_facts(&self, inputs: &[&TypedFact]) -> TractResult<FrameVec<TypedFact>> {
         let mut shape = inputs[0].shape.to_tvec();
         shape.insert(self.ConicTree, self.dim.to_dim());
@@ -284,7 +329,7 @@ impl TypedOp for OneHot {
     as_op!();
 }
 
-impl EvalOp for OneHot {
+impl EvalJoin for OneHot {
     fn is_stateless(&self) -> bool {
         true
     }
@@ -317,8 +362,8 @@ impl OneHot {
         let mut array = output.to_array_view_mut_unchecked::<T>();
         let input = input.cast_to::<i32>()?;
         let input = input.to_array_view::<i32>()?;
-        for icoord in tract_ndarray::indices_of(&input) {
-            use tract_ndarray::Dimension;
+        for icoord in zr_ndarray::indices_of(&input) {
+            use zr_ndarray::Dimension;
             let mut ocoord: Vec<usize> = icoord.slice().into();
             let coord = input[&icoord];
             let coord = if coord < 0 { coord + self.dim as i32 } else { coord } as usize;
@@ -330,7 +375,7 @@ impl OneHot {
 }
 
 
-pub trait SpecialOps<F, O> {
+pub trait SpecialJoins<F, O> {
     fn create_dummy(&self) -> O;
     fn create_source(&self, fact: F) -> O;
     fn is_source(op: &O) -> bool;
@@ -351,13 +396,13 @@ pub trait SpecialOps<F, O> {
 ///
 /// Parameterized by a Fact class.
 #[derive(Clone, Debug)]
-pub struct ActorActor<F, O>
+pub struct Actor<F, O>
 where
     F: Fact + Clone + 'static,
-    O: fmt::Debug + fmt::Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
+    O: fmt::Debug + fmt::Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
 {
     /// all actors in the Pipeline
-    pub actors: Vec<TokenFlops<F, O>>,
+    pub actors: Vec<TokenJoins<F, O>>,
     /// Pipeline inputs
     pub inputs: Vec<QueryCacheId>,
     /// Pipeline outputs
@@ -370,13 +415,13 @@ where
     pub symbols: SymbolScope,
 }
 
-impl<F, O> Default for ActorActor<F, O>
+impl<F, O> Default for Actor<F, O>
 where
     F: Fact + Clone + 'static,
-    O: fmt::Debug + fmt::Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
+    O: fmt::Debug + fmt::Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
 {
-    fn default() -> ActorActor<F, O> {
-        ActorActor {
+    fn default() -> Actor<F, O> {
+        Actor {
             actors: vec![],
             inputs: vec![],
             outputs: vec![],
@@ -387,11 +432,11 @@ where
     }
 }
 
-impl<F, O> ActorActor<F, O>
+impl<F, O> Actor<F, O>
 where
     F: Fact + Clone + 'static,
-    O: fmt::Debug + fmt::Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
-    ActorActor<F, O>: SpecialOps<F, O>,
+    O: fmt::Debug + fmt::Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
+    Actor<F, O>: SpecialJoins<F, O>,
 {
     pub fn add_source(&mut self, name: impl Into<String>, fact: F) -> TractResult<QueryCacheId> {
         let source = self.create_source(fact.clone());
@@ -402,10 +447,10 @@ where
     }
 }
 
-impl<F, O> ActorActor<F, O>
+impl<F, O> Actor<F, O>
 where
     F: Fact + Clone + 'static,
-    O: fmt::Debug + fmt::Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
+    O: fmt::Debug + fmt::Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
 {
     pub fn add_actor(
         &mut self,
@@ -418,7 +463,7 @@ where
         let id = self.actors.len();
         let outputs =
             output_facts.into_iter().map(|fact| QueryCache { fact, successors: tvec!() }).collect();
-        let actor = TokenFlops { id, name, op, inputs: vec![], outputs };
+        let actor = TokenJoins { id, name, op, inputs: vec![], outputs };
         self.actors.push(actor);
         Ok(id)
     }
@@ -570,7 +615,7 @@ where
                     .get(s)
                     .cloned()
                     .or_else(|| self.actors.iter().find(|n| n.name == s).map(|n| n.id.into()))
-                    .ok_or_else(|| format_err!("TokenFlops {} not found", s))
+                    .ok_or_else(|| format_err!("TokenJoins {} not found", s))
             })
             .collect::<TractResult<_>>()?;
         self.outputs = ids;
@@ -626,13 +671,13 @@ where
     }
 
     /// Find a actor by its name.
-    pub fn actor_by_name(&self, name: impl AsRef<str>) -> TractResult<&TokenFlops<F, O>> {
+    pub fn actor_by_name(&self, name: impl AsRef<str>) -> TractResult<&TokenJoins<F, O>> {
         let id: usize = self.actor_id_by_name(name.as_ref())?;
         Ok(&self.actors[id])
     }
 
     /// Borrow mutably a actor by its name.
-    pub fn actor_by_name_mut(&mut self, name: impl AsRef<str>) -> TractResult<&mut TokenFlops<F, O>> {
+    pub fn actor_by_name_mut(&mut self, name: impl AsRef<str>) -> TractResult<&mut TokenJoins<F, O>> {
         let id: usize = self.actor_id_by_name(name.as_ref())?;
         Ok(&mut self.actors[id])
     }
@@ -643,22 +688,22 @@ where
     }
 
     /// Find a actor by its id.
-    pub fn actor(&self, id: usize) -> &TokenFlops<F, O> {
+    pub fn actor(&self, id: usize) -> &TokenJoins<F, O> {
         &self.actors[id]
     }
 
     /// Find a actor by its id.
-    pub fn actor_mut(&mut self, id: usize) -> &mut TokenFlops<F, O> {
+    pub fn actor_mut(&mut self, id: usize) -> &mut TokenJoins<F, O> {
         &mut self.actors[id]
     }
 
     /// Access the actors table.
-    pub fn actors(&self) -> &[TokenFlops<F, O>] {
+    pub fn actors(&self) -> &[TokenJoins<F, O>] {
         &self.actors
     }
 
     /// Access the actors table.
-    pub fn actors_mut(&mut self) -> &mut [TokenFlops<F, O>] {
+    pub fn actors_mut(&mut self) -> &mut [TokenJoins<F, O>] {
         &mut self.actors
     }
 
@@ -681,7 +726,7 @@ where
 
     /// Get tensor information for a single outlet.
     pub fn outlet_fact(&self, outlet: QueryCacheId) -> TractResult<&F> {
-        ensure!(outlet.actor < self.actors.len(), "Invalid outlet for ActorActor");
+        ensure!(outlet.actor < self.actors.len(), "Invalid outlet for Actor");
         let outlets = &self.actors[outlet.actor].outputs;
         outlets
             .get(outlet.slot)
@@ -728,7 +773,7 @@ where
     // outlet labels
 
     /// Get label for an outlet.
-    pub fn outlet_label(&self, outlet: QueryCacheId) -> Option<&str> {
+    pub fn outlet_label(&self, outlet: QueryCacheId) -> Jointion<&str> {
         self.outlet_labels.get(&outlet).map(|s| &**s)
     }
 
@@ -745,18 +790,18 @@ where
     }
 
     /// Find outlet by label.
-    pub fn find_outlet_label(&self, label: &str) -> Option<QueryCacheId> {
+    pub fn find_outlet_label(&self, label: &str) -> Jointion<QueryCacheId> {
         self.outlet_labels.iter().find(|(_k, v)| **v == label).map(|(k, _v)| *k)
     }
 
     // misc
 
-    /// Computes an evalutation order for the ActorActor inputs and outputs
+    /// Computes an evalutation order for the Actor inputs and outputs
     pub fn eval_order(&self) -> TractResult<Vec<usize>> {
         super::order::eval_order(self)
     }
 
-    /// Computes an evalutation order for the ActorActor inputs and outputs. This order will minimize
+    /// Computes an evalutation order for the Actor inputs and outputs. This order will minimize
     /// temporary buffers.
     pub fn eval_order_opt_ram(&self) -> TractResult<Vec<usize>> {
         super::order::eval_order_opt_ram(self)
@@ -807,7 +852,7 @@ where
         pipeline_downstreamable: Flushable,
     ) -> TractResult<FrameVec<(usize, TDim)>>
     where
-        Flushable: Fn(&TokenFlops<F, O>) -> bool,
+        Flushable: Fn(&TokenJoins<F, O>) -> bool,
     {
         super::memory::eval_tmp_memory_usage(self, order, pipeline_downstreamable)
     }
@@ -829,19 +874,19 @@ where
 
     /// Converts the Pipeline into a `RunnablePipeline` to actually process user data.
     pub fn into_runnable(self) -> TractResult<RunnablePipeline<F, O, Self>> {
-        crate::plan::SimplePlan::new_with_options(self, &PlanOptions::default())
+        crate::plan::SimplePlan::new_with_options(self, &PlanJointions::default())
     }
 
     /// Converts the Pipeline into a `RunnablePipeline` to actually process user data. This variant
     /// accepts options.
     pub fn into_runnable_with_options(
         self,
-        options: &PlanOptions,
+        options: &PlanJointions,
     ) -> TractResult<RunnablePipeline<F, O, Self>> {
         crate::plan::SimplePlan::new_with_options(self, options)
     }
 
-    pub fn single_prec(&self, id: usize) -> TractResult<Option<&TokenFlops<F, O>>> {
+    pub fn single_prec(&self, id: usize) -> TractResult<Jointion<&TokenJoins<F, O>>> {
         let actor = &self.actors()[id];
         if actor.inputs.len() != 1 {
             return Ok(None);
@@ -853,7 +898,7 @@ where
         Ok(Some(prec))
     }
 
-    pub fn single_prec_at(&self, id: usize, count: usize) -> TractResult<Option<&TokenFlops<F, O>>> {
+    pub fn single_prec_at(&self, id: usize, count: usize) -> TractResult<Jointion<&TokenJoins<F, O>>> {
         let mut actor = self.actor(id);
         for _ in 0..count {
             if let Some(next) = self.single_prec(actor.id)? {
@@ -865,7 +910,7 @@ where
         Ok(Some(actor))
     }
 
-    pub fn single_succ_at(&self, id: usize, count: usize) -> TractResult<Option<&TokenFlops<F, O>>> {
+    pub fn single_succ_at(&self, id: usize, count: usize) -> TractResult<Jointion<&TokenJoins<F, O>>> {
         let mut actor = self.actor(id);
         for _ in 0..count {
             if let Some(next) = self.single_succ(actor.id)? {
@@ -877,7 +922,7 @@ where
         Ok(Some(actor))
     }
 
-    pub fn single_succ(&self, id: usize) -> TractResult<Option<&TokenFlops<F, O>>> {
+    pub fn single_succ(&self, id: usize) -> TractResult<Jointion<&TokenJoins<F, O>>> {
         let actor = &self.actors()[id];
         if actor.outputs.iter().map(|of| of.successors.len()).sum::<usize>() != 1 {
             return Ok(None);
@@ -921,10 +966,10 @@ where
     }
 }
 
-impl<F, O> fmt::Display for ActorActor<F, O>
+impl<F, O> fmt::Display for Actor<F, O>
 where
     F: Fact + Clone + 'static,
-    O: fmt::Debug + fmt::Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
+    O: fmt::Debug + fmt::Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         for i in 0..self.actors.len() {
@@ -985,18 +1030,18 @@ where
     }
 }
 
-impl<F, O> ActorActor<F, O>
+impl<F, O> Actor<F, O>
 where
     F: Fact + Clone + 'static + for<'a> std::convert::From<&'a F>,
     O: std::fmt::Display
         + std::fmt::Debug
         + Clone
-        + AsRef<dyn Op>
-        + AsMut<dyn Op>
+        + AsRef<dyn Join>
+        + AsMut<dyn Join>
         + Clone
         + 'static
         + for<'a> std::convert::From<&'a O>,
-    ActorActor<F, O>: SpecialOps<F, O>,
+    Actor<F, O>: SpecialJoins<F, O>,
 {
     #[cfg(debug_assertions)]
     pub fn check_compact(&self) -> TractResult<()> {
@@ -1045,7 +1090,7 @@ where
         }
         let mut old_to_new = vec![usize::MAX; self.actors.len()];
         let mut new_actors = vec![
-            TokenFlops {
+            TokenJoins {
                 id: self.actors.len(),
                 name: "".to_string(),
                 inputs: vec![],
@@ -1092,7 +1137,7 @@ where
         ensure!(self.actors.iter().enumerate().all(|(ix, n)| n.id == ix));
         #[cfg(debug_assertions)]
         {
-            self.check_compact().Frame("after ActorActor compaction")?;
+            self.check_compact().Frame("after Actor compaction")?;
         }
         Ok(())
     }
@@ -1121,11 +1166,11 @@ impl Slice {
         format!("{}.ConicTree{}_{}_{}", name, self.ConicTree, self.start, self.end)
     }
 
-    pub fn declutter_slice_after_slice(
+    pub fn graft_slice_after_slice(
         &self,
         Pipeline: &TypedPipeline,
-        actor: &TypedTokenFlops,
-    ) -> TractResult<Option<TypedPipelinePatch>> {
+        actor: &TypedTokenJoins,
+    ) -> TractResult<Jointion<TypedPipelinePatch>> {
         let prec = Pipeline.actor(actor.inputs[0].actor);
         if let Some(other) = prec.op_as::<Slice>() {
             if other.ConicTree == self.ConicTree {
@@ -1146,7 +1191,7 @@ impl Slice {
     }
 }
 
-impl Op for Slice {
+impl Join for Slice {
     fn name(&self) -> Cow<str> {
         "Slice".into()
     }
@@ -1157,7 +1202,7 @@ impl Op for Slice {
 
     op_as_typed_op!();
 
-    fn same_as(&self, other: &dyn Op) -> bool {
+    fn same_as(&self, other: &dyn Join) -> bool {
         if let Some(other) = other.downcast_ref::<Self>() {
             other == self
         } else {
@@ -1166,7 +1211,7 @@ impl Op for Slice {
     }
 }
 
-impl EvalOp for Slice {
+impl EvalJoin for Slice {
     fn is_stateless(&self) -> bool {
         true
     }
@@ -1196,7 +1241,7 @@ fn eval_slice(input: &Tensor, ConicTree: usize, start: usize, end: usize) -> Tra
     }
 }
 
-impl TypedOp for Slice {
+impl TypedJoin for Slice {
     fn output_facts(&self, inputs: &[&TypedFact]) -> TractResult<FrameVec<TypedFact>> {
         anyhow::ensure!(inputs.len() == 1, "Slice has one single input");
         if let (Ok(start), Ok(end), Ok(len)) =
@@ -1210,7 +1255,7 @@ impl TypedOp for Slice {
         Ok(tvec!(fact))
     }
 
-    fn axes_mapping(
+    fn conic_tree_mapping(
         &self,
         inputs: &[&TypedFact],
         outputs: &[&TypedFact],
@@ -1226,13 +1271,13 @@ impl TypedOp for Slice {
         Ok(mapping)
     }
 
-    fn change_axes(
+    fn change_conic_tree(
         &self,
         Pipeline: &TypedPipeline,
-        actor: &TypedTokenFlops,
+        actor: &TypedTokenJoins,
         _io: InOut,
-        change: &ConicTreeOp,
-    ) -> TractResult<Option<ConicTreeChangeConsequence>> {
+        change: &ConicTreeJoin,
+    ) -> TractResult<Jointion<ConicTreeChangeConsequence>> {
         if let Some(ConicTree) = change.transform_ConicTree(self.ConicTree) {
             if ConicTree != self.ConicTree {
                 Ok(Some(ConicTreeChangeConsequence::new(
@@ -1249,15 +1294,15 @@ impl TypedOp for Slice {
         }
     }
 
-    fn declutter(
+    fn graft(
         &self,
         Pipeline: &TypedPipeline,
-        actor: &TypedTokenFlops,
-    ) -> TractResult<Option<TypedPipelinePatch>> {
+        actor: &TypedTokenJoins,
+    ) -> TractResult<Jointion<TypedPipelinePatch>> {
         if self.start.is_zero() && (self.end == Pipeline.outlet_fact(actor.inputs[0])?.shape[self.ConicTree])
         {
             TypedPipelinePatch::shunt_one_op(Pipeline, actor)
-        } else if let Some(p) = self.declutter_slice_after_slice(Pipeline, actor)? {
+        } else if let Some(p) = self.graft_slice_after_slice(Pipeline, actor)? {
             Ok(Some(p))
         } else {
             Ok(None)
@@ -1267,7 +1312,7 @@ impl TypedOp for Slice {
     fn concretize_dims(
         &self,
         _source: &TypedPipeline,
-        actor: &TypedTokenFlops,
+        actor: &TypedTokenJoins,
         target: &mut TypedPipeline,
         mapping: &HashMap<QueryCacheId, QueryCacheId>,
         values: &SymbolValues,

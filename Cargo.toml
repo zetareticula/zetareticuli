@@ -25,6 +25,6 @@ default = ["serde_json", "serde_yaml", "serde_cbor", "serde_toml", "serde_xml", 
 serde_json = ["serde_json"]
 serde_yaml = ["serde_yaml"]
 serde_cbor = ["serde_cbor"]
-
+serde_toml = ["serde_toml"]
 
 

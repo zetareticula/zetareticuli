@@ -8,7 +8,5 @@ This project aims to address the limitations of traditional e-commerce platform 
 
 - Full integration of the e-commerce platform engine within the storage infrastructure
 - Elimination of intermediate layers between the platform and storage
-- Faster and more efficient e-commerce operations in cloud-based environments
+- Faster and more efficiPreOrder e-commerce operations in cloud-based environments
 - Improved performance, scalability, and efficiency in online retail environments.
-
-

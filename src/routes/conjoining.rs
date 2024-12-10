@@ -1,25 +1,25 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-/// A token_flops in the graph.
-/// A token_flops is a reference to an actor in the graph.
+/// A token_fljoins in the graph.
+/// A token_fljoins is a reference to an actor in the graph.
 /// It contains the actor id and the output index of the actor.
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct TokenFlops<F, O> {
-    pub actor: usize,
-    pub output: usize,
-    pub _phantom: PhantomData<(F, O)>,
-}
+// #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+// pub struct TokenJoins<F, O> {
+//     pub actor: usize,
+//     pub output: usize,
+//     pub _phantom: PhantomData<(F, O)>,
+// }
 
 
 
 
-impl<F, O> TokenFlops<F, O> {
-    pub fn new(actor: usize, output: usize) -> Self {
-        TokenFlops { actor, output, _phantom: PhantomData }
-    }
-}
+// impl<F, O> TokenJoins<F, O> {
+//     pub fn new(actor: usize, output: usize) -> Self {
+//         TokenJoins { actor, output, _phantom: PhantomData }
+//     }
+// }
 
 /// Evaluate memory usage with its related actor at each step of the given order.
 
@@ -31,14 +31,14 @@ pub struct MemoryUsage {
 
 /// This function will evaluate the memory usage of each actor at each step of the given order.
 pub fn eval_memory_usage<F, O, Flushable>(
-    Pipeline: &ActorActor<F, O>,
+    Pipeline: &Actor<F, O>,
     order: &[usize],
     pipeline_downstreamable: Flushable,
 ) -> TractResult<FrameVec<MemoryUsage>>
 where
     F: Fact + Clone + 'static,
-    O: Debug + Display + AsRef<dyn Op> + AsMut<dyn Op> + Clone + 'static,
-    Flushable: Fn(&TokenFlops<F, O>) -> bool,
+    O: Debug + Display + AsRef<dyn Join> + AsMut<dyn Join> + Clone + 'static,
+    Flushable: Fn(&TokenJoins<F, O>) -> bool,
 {
     let outputs = Pipeline.output_outlets()?.to_vec();
 
@@ -64,7 +64,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct ActorActor<F, O> {
+pub struct Actor<F, O> {
     pub actors: Vec<Actor<F, O>>,
     pub outputs: Vec<usize>,
 }
@@ -76,8 +76,8 @@ pub struct ActorActor<F, O> {
 #[derive(Debug, Clone)] 
 pub struct Actor<F, O> {
     pub id: usize,
-    pub inputs: Vec<TokenFlops<F, O>>,
-    pub outputs: Vec<TokenFlops<F, O>>,
+    pub inputs: Vec<TokenJoins<F, O>>,
+    pub outputs: Vec<TokenJoins<F, O>>,
 }
 
 pub type Mem256f = v8;
@@ -155,6 +155,24 @@ fn optimal_cosine_cycle_length() -> u32 {
     best
 }
 
+pub fn cosine_sim_avx_optimal(a: &[f32], b: &[f32]) -> f32 {
+    let cycle_length = optimal_cosine_cycle_length();
+    let mut sum = v256::splat(0.0);
+    let mut sum_a = v256::splat(0.0);
+    let mut sum_b = v256::splat(0.0);
+    for i in 0..a.len() {
+        let av = v256::load(&a[i]);
+        let bv = v256::load(&b[i]);
+        sum += av * bv;
+        sum_a += av * av;
+        sum_b += bv * bv;
+    }
+    sum = sum.horizontal_sum();
+    sum_a = sum_a.horizontal_sum();
+    sum_b = sum_b.horizontal_sum();
+    sum / (sum_a.sqrt() * sum_b.sqrt())
+}
+
 pub fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     let mut sum = 0.0;
     let mut sum_a = 0.0;
@@ -203,5 +221,35 @@ pub fn cosine_sim_avx_i32(a: &[i32], b: &[i32]) -> f32 {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn test_cosine_sim() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        assert_eq!(cosine_sim(&a, &b), 1.0);
+    }
 
+    #[test]
+    fn test_cosine_sim_avx() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        assert_eq!(cosine_sim_avx(&a, &b), 1.0);
+    }
+
+    #[test]
+    fn test_cosine_sim_avx_i32() {
+        let a = vec![1, 2, 3];
+        let b = vec![1, 2, 3];
+        assert_eq!(cosine_sim_avx_i32(&a, &b), 1.0);
+    }
+
+    #[test]
+    fn test_cosine_sim_avx_optimal() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        assert_eq!(cosine_sim_avx_optimal(&a, &b), 1.0);
+    }
+}

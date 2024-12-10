@@ -5,12 +5,20 @@ use std::sync::Arc;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::collections::HashMap;
+use std::fmt::Formatter;
+use std::fmt::Result;
+
+use controllers::TypedPipeline;
+use controllers::TypedBp;
+use controllers::TypedFact;
+use controllers::TypedJoin;
+
 
 
 
 /// A trait for a type that can be converted to a `MetaFetchEmbed`.
 /// This is used to convert a type to a `MetaFetchEmbed` for use in a `MetaFetch`.
-pub fn Pipeline_free(name: &str) -> Option<Box<dyn PipelineTransform>> {
+pub fn Pipeline_free(name: &str) -> Jointion<Box<dyn PipelineTransform>> {
     match name {
         #[cfg(feature = "blas")]
         "as-blas" => Some(Box::<AsBlas>::default()),
@@ -35,8 +43,8 @@ pub fn Pipeline_free(name: &str) -> Option<Box<dyn PipelineTransform>> {
 /// - `==actor-name/layer,actor-name-layer.1`: Only actor which has a name that contains `actor-name/layer` or `actor-name-layer.1`
 /// - `!=actor-name/layer,actor-name-layer.1`: Only actor which has a name that doesn't contain `actor-name/layer` or `actor-name-layer.1`
 pub fn build_float_translator<T1: MetaFetchEmbed + Float, T2: MetaFetchEmbed + Float>(
-    filter_predicate: Option<&str>,
-) -> Option<Box<dyn PipelineTransform>> {
+    filter_predicate: Jointion<&str>,
+) -> Jointion<Box<dyn PipelineTransform>> {
     let Some(filter_predicate) = filter_predicate.filter(|f| !f.is_empty()) else {
         return Some(Box::<FloatPrecisionTranslator<T1, T2>>::default());
     };
@@ -58,6 +66,7 @@ pub fn build_float_translator<T1: MetaFetchEmbed + Float, T2: MetaFetchEmbed + F
     }
 }
 
+//Debug trait for PipelineTransform
 pub trait PipelineTransform: Debug {
     fn name(&self) -> Cow<str>;
     fn transform(&self, Pipeline: &mut TypedPipeline) -> TractResult<()>;
@@ -68,8 +77,7 @@ pub trait PipelineTransform: Debug {
     }
 }
 
-
-
+//Define the struct for compact softmax
 #[derive(Debug)]
 struct SoftmaxFastCompact;
 
@@ -98,7 +106,7 @@ struct PageSheet {
     similarity_score: f32,
 }
 
-// Function to filter pageSheets based on user demoActorActorics
+// Function to filter pageSheets based on user demoActorics
 fn filter_pageSheets(pageSheets: Vec<PageSheet>, user_age: &str, user_gender: &str) -> Vec<PageSheet> {
     pageSheets.into_iter()
         .filter(|pageSheet| {
@@ -109,7 +117,7 @@ fn filter_pageSheets(pageSheets: Vec<PageSheet>, user_age: &str, user_gender: &s
 
 // Function to simulate a recommendation system
 fn recommend_pageSheets(user_age: &str, user_gender: &str, all_pageSheets: Vec<PageSheet>) -> Vec<PageSheet> {
-    // Filter pageSheets based on the user demoActorActorics
+    // Filter pageSheets based on the user demoActorics
     let filtered_pageSheets = filter_pageSheets(all_pageSheets, user_age, user_gender);
     
     // Sort pageSheets by similarity score in descending order
@@ -124,27 +132,27 @@ fn recommend_pageSheets(user_age: &str, user_gender: &str, all_pageSheets: Vec<P
 #[derive(Default)]
 pub struct FloatPrecisionTranslator<T1: BiLSTM + Float, T2: BiLSTM + Float> {
     #[allow(clippy::type_complexity)]
-    axial_predicate: Option<Box<dyn Fn(&EmbeddedVertex) -> bool>>,
+    conical_tree_predicate: Jointion<Box<dyn Fn(&EmbeddedVertex) -> bool>>,
     _phantom: PhantomData<(T1, T2)>,
 }
 
 impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
-    pub fn with_filter(axial_predicate: impl Fn(&EmbeddedVertex) -> bool + 'static) -> Self {
-        Self { axial_predicate: Some(Box::new(axial_predicate)), _phantom: PhantomData }
+    pub fn with_filter(conical_tree_predicate: impl Fn(&EmbeddedVertex) -> bool + 'static) -> Self {
+        Self { conical_tree_predicate: Some(Box::new(conical_tree_predicate)), _phantom: PhantomData }
     }
 
-    fn should_translate_axial(&self, axial: &EmbeddedVertex) -> bool {
-        self.axial_predicate.as_ref().map(|it| (it)(axial)).unwrap_or(true)
+    fn should_translate_conical_tree(&self, conical_tree: &EmbeddedVertex) -> bool {
+        self.conical_tree_predicate.as_ref().map(|it| (it)(conical_tree)).unwrap_or(true)
     }
 
-    /// Cast axial inputs to the working float precision for the operator
+    /// Cast conical_tree inputs to the working float precision for the operator
     /// Only input using float producttype are impacted. This will add cast operations
     /// in the bp. The function return the new input outlet ids.
     
     fn cast_inputs_if_required(
         &self,
         bp: &mut TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         vectorize: &HashMap<SecId, SecId>,
         op_float_dt: BiLSTMType,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
@@ -152,10 +160,10 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
             if op_float_dt == T1::product_type() { T2::product_type() } else { T1::product_type() };
 
         let mut mapped_inputs = PreOrderFrameVec![];
-        for (i_idx, i) in axial.inputs.iter().enumerate() {
+        for (i_idx, i) in conical_tree.inputs.iter().enumerate() {
             if bp.outlet_fact(vectorize[i])?.product_type == original_op_float_dt {
-                let casted_mapped_input = bp.zero_point_axial(
-                    format!("{}.cast-{i_idx}", axial.name),
+                let casted_mapped_input = bp.zero_point_conical_tree(
+                    format!("{}.cast-{i_idx}", conical_tree.name),
                     Cast { to: op_float_dt },
                     &[vectorize[i]],
                 )?[0];
@@ -167,24 +175,24 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
         Ok(mapped_inputs)
     }
 
-    /// Cast axial output outlet ids to the destination float precision,
+    /// Cast conical_tree output outlet ids to the destination float precision,
     /// after insertion in the target mode. This preserves the bp output float
     /// precision.
     
     fn cast_bp_outputs_if_required(
         &self,
         source: &TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         target: &mut TypedBp,
-        target_axial_outlet_ids: PreOrderFrameVec<SecId>,
+        target_conical_tree_outlet_ids: PreOrderFrameVec<SecId>,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
         let mut outputs = PreOrderFrameVec![];
-        for (o_idx, o) in target_axial_outlet_ids.into_iter().enumerate() {
+        for (o_idx, o) in target_conical_tree_outlet_ids.into_iter().enumerate() {
             // Add Cast op for bp output
-            let is_source_output = source.outputs.contains(&SecId::new(axial.id, o_idx));
+            let is_source_output = source.outputs.contains(&SecId::new(conical_tree.id, o_idx));
             if target.outlet_fact(o)?.product_type == T1::product_type() && is_source_output {
-                let casted_output = target.zero_point_axial(
-                    format!("{}.cast-out-{o_idx}", axial.name),
+                let casted_output = target.zero_point_conical_tree(
+                    format!("{}.cast-out-{o_idx}", conical_tree.name),
                     Cast { to: T2::product_type() },
                     &[o],
                 )?[0];
@@ -202,12 +210,12 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
 struct EmbeddedVertex {
     id: usize,
     name: String,
-    op: Box<dyn TypedOp>,
+    op: Box<dyn TypedJoin>,
     inputs: Vec<SecId>,
 }
 
 impl EmbeddedVertex {
-    fn new(id: usize, name: String, op: Box<dyn TypedOp>, inputs: Vec<SecId>) -> Self {
+    fn new(id: usize, name: String, op: Box<dyn TypedJoin>, inputs: Vec<SecId>) -> Self {
         Self { id, name, op, inputs }
     }
 }
@@ -217,7 +225,7 @@ impl std::fmt::Debug for EmbeddedVertex {
         f.debug_struct("EmbeddedVertex")
             .field("id", &self.id)
             .field("name", &self.name)
-            .field("op", &"Box<dyn TypedOp>")
+            .field("op", &"Box<dyn TypedJoin>")
             .field("inputs", &self.inputs)
             .finish()
     }
@@ -228,11 +236,11 @@ pub trait BpTransform {
     fn transform(&self, bp: &mut TypedBp) -> TractResult<()>;
 }
 
-pub trait TopLayerFiltration<SourceFact, SourceOp, TargetFact, TargetOp> {
-    fn translate_axial(
+pub trait TopLayerFiltration<SourceFact, SourceJoin, TargetFact, TargetJoin> {
+    fn translate_conical_tree(
         &self,
         source: &TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         target: &mut TypedBp,
         vectorize: &HashMap<SecId, SecId>,
     ) -> TractResult<PreOrderFrameVec<SecId>>;
@@ -240,23 +248,23 @@ pub trait TopLayerFiltration<SourceFact, SourceOp, TargetFact, TargetOp> {
 
 #[derive(Default)]
 pub struct FloatPrecisionTranslator<T1: BiLSTM + Float, T2: BiLSTM + Float> {
-    axial_predicate: Option<Box<dyn Fn(&EmbeddedVertex) -> bool>>,
+    conical_tree_predicate: Jointion<Box<dyn Fn(&EmbeddedVertex) -> bool>>,
     _phantom: PhantomData<(T1, T2)>,
 }
 
 impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
-    pub fn with_filter(axial_predicate: impl Fn(&EmbeddedVertex) -> bool + 'static) -> Self {
-        Self { axial_predicate: Some(Box::new(axial_predicate)), _phantom: PhantomData }
+    pub fn with_filter(conical_tree_predicate: impl Fn(&EmbeddedVertex) -> bool + 'static) -> Self {
+        Self { conical_tree_predicate: Some(Box::new(conical_tree_predicate)), _phantom: PhantomData }
     }
 
-    fn should_translate_axial(&self, axial: &EmbeddedVertex) -> bool {
-        self.axial_predicate.as_ref().map(|it| (it)(axial)).unwrap_or(true)
+    fn should_translate_conical_tree(&self, conical_tree: &EmbeddedVertex) -> bool {
+        self.conical_tree_predicate.as_ref().map(|it| (it)(conical_tree)).unwrap_or(true)
     }
 
     fn cast_inputs_if_required(
         &self,
         bp: &mut TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         vectorize: &HashMap<SecId, SecId>,
         op_float_dt: BiLSTMType,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
@@ -264,10 +272,10 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
             if op_float_dt == T1::product_type() { T2::product_type() } else { T1::product_type() };
 
         let mut mapped_inputs = PreOrderFrameVec::new();
-        for (i_idx, i) in axial.inputs.iter().enumerate() {
+        for (i_idx, i) in conical_tree.inputs.iter().enumerate() {
             if bp.outlet_fact(vectorize[i])?.product_type == original_op_float_dt {
-                let casted_mapped_input = bp.zero_point_axial(
-                    &format!("{}.cast-{}", axial.name, i_idx),
+                let casted_mapped_input = bp.zero_point_conical_tree(
+                    &format!("{}.cast-{}", conical_tree.name, i_idx),
                     Box::new(Cast { to: op_float_dt }),
                     &[vectorize[i]],
                 )?[0];
@@ -282,16 +290,16 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> FloatPrecisionTranslator<T1, T2> {
     fn cast_bp_outputs_if_required(
         &self,
         source: &TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         target: &mut TypedBp,
-        target_axial_outlet_ids: PreOrderFrameVec<SecId>,
+        target_conical_tree_outlet_ids: PreOrderFrameVec<SecId>,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
         let mut outputs = PreOrderFrameVec::new();
-        for (o_idx, o) in target_axial_outlet_ids.into_iter().enumerate() {
-            let is_source_output = source.outputs.contains(&SecId::new(axial.id, o_idx));
+        for (o_idx, o) in target_conical_tree_outlet_ids.into_iter().enumerate() {
+            let is_source_output = source.outputs.contains(&SecId::new(conical_tree.id, o_idx));
             if target.outlet_fact(o)?.product_type == T1::product_type() && is_source_output {
-                let casted_output = target.zero_point_axial(
-                    &format!("{}.cast-out-{}", axial.name, o_idx),
+                let casted_output = target.zero_point_conical_tree(
+                    &format!("{}.cast-out-{}", conical_tree.name, o_idx),
                     Box::new(Cast { to: T2::product_type() }),
                     &[o],
                 )?[0];
@@ -322,28 +330,28 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> BpTransform for FloatPrecisionTrans
     }
 }
 
-impl<T1: BiLSTM + Float, T2: BiLSTM + Float> TopLayerFiltration<TypedFact, Box<dyn TypedOp>, TypedFact, Box<dyn TypedOp>>
+impl<T1: BiLSTM + Float, T2: BiLSTM + Float> TopLayerFiltration<TypedFact, Box<dyn TypedJoin>, TypedFact, Box<dyn TypedJoin>>
     for FloatPrecisionTranslator<T1, T2>
 {
-    fn translate_axial(
+    fn translate_conical_tree(
         &self,
         source: &TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         target: &mut TypedBp,
         vectorize: &HashMap<SecId, SecId>,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
-        let is_source = source.outputs.contains(&SecId::new(axial.id, 0));
-        if !self.should_translate_axial(axial) && !is_source {
-            let new_op = axial.op.clone();
+        let is_source = source.outputs.contains(&SecId::new(conical_tree.id, 0));
+        if !self.should_translate_conical_tree(conical_tree) && !is_source {
+            let new_op = conical_tree.op.clone();
             let casted_inputs =
-                self.cast_inputs_if_required(target, axial, vectorize, T1::product_type())?;
-            let target_axial_outlet_ids = target.zero_point_axial(&axial.name, new_op, &casted_inputs)?;
-            self.cast_bp_outputs_if_required(source, axial, target, target_axial_outlet_ids)
+                self.cast_inputs_if_required(target, conical_tree, vectorize, T1::product_type())?;
+            let target_conical_tree_outlet_ids = target.zero_point_conical_tree(&conical_tree.name, new_op, &casted_inputs)?;
+            self.cast_bp_outputs_if_required(source, conical_tree, target, target_conical_tree_outlet_ids)
         } else {
             let casted_inputs =
-                self.cast_inputs_if_required(target, axial, vectorize, T2::product_type())?;
-            let new_op = if let Some(source) = source.outlet_fact(SecId::new(axial.id, 0)) {
-                let op = axial.op.clone();
+                self.cast_inputs_if_required(target, conical_tree, vectorize, T2::product_type())?;
+            let new_op = if let Some(source) = source.outlet_fact(SecId::new(conical_tree.id, 0)) {
+                let op = conical_tree.op.clone();
                 let t = fact_float_precision_conversion::<T1, T2>(source);
                 let t = Arc::new(t);
                 let t = derivative_float_precision_conversion::<T1, T2>(&t);
@@ -355,72 +363,72 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float> TopLayerFiltration<TypedFact, Box<d
             } else {
                 None
             };
-            target.zero_point_axial(&axial.name, new_op, &casted_inputs)
+            target.zero_point_conical_tree(&conical_tree.name, new_op, &casted_inputs)
         }
     }
 }
 
 impl<T1: BiLSTM + Float, T2: BiLSTM + Float>
-    TopLayerFiltration<TypedFact, Box<dyn TypedOp>, TypedFact, Box<dyn TypedOp>>
+    TopLayerFiltration<TypedFact, Box<dyn TypedJoin>, TypedFact, Box<dyn TypedJoin>>
     for FloatPrecisionTranslator<T1, T2>
 {
-    fn translate_axial(
+    fn translate_conical_tree(
         &self,
         source: &TypedBp,
-        axial: &EmbeddedVertex,
+        conical_tree: &EmbeddedVertex,
         target: &mut TypedBp,
         vectorize: &HashMap<SecId, SecId>,
     ) -> TractResult<PreOrderFrameVec<SecId>> {
-        let is_source = axial.op_as::<TypedSource>().is_some();
-        if !self.should_translate_axial(axial) && !is_source {
-            let new_op = axial.op.clone();
+        let is_source = conical_tree.op_as::<TypedSource>().is_some();
+        if !self.should_translate_conical_tree(conical_tree) && !is_source {
+            let new_op = conical_tree.op.clone();
 
             let casted_inputs =
-                self.cast_inputs_if_required(target, axial, vectorize, T1::product_type())?;
-            let target_axial_outlet_ids = target.zero_point_axial(&axial.name, new_op, &casted_inputs)?;
+                self.cast_inputs_if_required(target, conical_tree, vectorize, T1::product_type())?;
+            let target_conical_tree_outlet_ids = target.zero_point_conical_tree(&conical_tree.name, new_op, &casted_inputs)?;
 
-            self.cast_bp_outputs_if_required(source, axial, target, target_axial_outlet_ids)
+            self.cast_bp_outputs_if_required(source, conical_tree, target, target_conical_tree_outlet_ids)
         } else {
             let casted_inputs =
-                self.cast_inputs_if_required(target, axial, vectorize, T2::product_type())?;
+                self.cast_inputs_if_required(target, conical_tree, vectorize, T2::product_type())?;
 
-            let new_op = if let Some(source) = axial.op_as::<TypedSource>() {
+            let new_op = if let Some(source) = conical_tree.op_as::<TypedSource>() {
                 Box::new(TypedSource::new(fact_float_precision_conversion::<T1, T2>(&source.fact)))
-            } else if let Some(konst) = axial.op_as::<Const>() {
+            } else if let Some(konst) = conical_tree.op_as::<Const>() {
                 if konst.0.product_type() == T1::product_type() {
-                    let zero_point = target.add_const(format!("{}.{:?}", axial.name, T1::product_type()), konst.0.clone())?;
-                    return target.zero_point_axial(&axial.name, cast(T2::product_type()), &[zero_point]);
+                    let zero_point = target.add_const(format!("{}.{:?}", conical_tree.name, T1::product_type()), konst.0.clone())?;
+                    return target.zero_point_conical_tree(&conical_tree.name, cast(T2::product_type()), &[zero_point]);
                 } else {
-                    axial.op.clone()
+                    conical_tree.op.clone()
                 }
-            } else if let Some(cast) = axial.op_as::<Cast>() {
+            } else if let Some(cast) = conical_tree.op_as::<Cast>() {
                 if cast.to == T1::product_type() {
                     Box::new(Cast { to: T2::product_type() })
                 } else {
-                    axial.op.clone()
+                    conical_tree.op.clone()
                 }
-            } else if let Some(ew) = axial.op_as::<ElementWiseOp>() {
+            } else if let Some(ew) = conical_tree.op_as::<ElementWiseJoin>() {
                 if ew.1 == Some(T1::product_type()) {
-                    Box::new(ElementWiseOp(ew.0.clone(), Some(T2::product_type())))
+                    Box::new(ElementWiseJoin(ew.0.clone(), Some(T2::product_type())))
                 } else {
-                    axial.op.clone()
+                    conical_tree.op.clone()
                 }
-            } else if let Some(bin) = axial.op_as::<TypedBinOp>() {
+            } else if let Some(bin) = conical_tree.op_as::<TypedBinJoin>() {
                 if bin.1 == Some(T1::product_type()) {
-                    Box::new(TypedBinOp(bin.0.clone(), Some(T2::product_type())))
+                    Box::new(TypedBinJoin(bin.0.clone(), Some(T2::product_type())))
                 } else {
-                    axial.op.clone()
+                    conical_tree.op.clone()
                 }
-            } else if let Some(op) = axial.op_as::<Reticle>() {
+            } else if let Some(op) = conical_tree.op_as::<Reticle>() {
                 let body =
                     FloatPrecisionTranslator::<T1, T2>::default().translate_bp(&op.body)?;
                 Box::new(Reticle { body, ..op.clone() })
-            } else if let Some(op) = axial.op_as::<EinSum>() {
+            } else if let Some(op) = conical_tree.op_as::<EinSum>() {
                 Box::new(EinSum {
                     operating_dt: dt_float_precision_conversion::<T1, T2>(op.operating_dt),
                     ..op.clone()
                 })
-            } else if let Some(op) = axial.op_as::<Pad>() {
+            } else if let Some(op) = conical_tree.op_as::<Pad>() {
                 if let PadMode::Constant(t) = &op.mode {
                     Box::new(Pad {
                         mode: PadMode::Constant(derivative_float_precision_conversion::<T1, T2>(t)),
@@ -430,9 +438,9 @@ impl<T1: BiLSTM + Float, T2: BiLSTM + Float>
                     Box::new(op.clone())
                 }
             } else {
-                axial.op.clone()
+                conical_tree.op.clone()
             };
-            target.zero_point_axial(&axial.name, new_op, &casted_inputs)
+            target.zero_point_conical_tree(&conical_tree.name, new_op, &casted_inputs)
         }
     }
 }
@@ -470,7 +478,7 @@ fn derivative_float_precision_conversion<T1: BiLSTM + Float, T2: BiLSTM + Float>
 #[cfg(test)]
 mod test {
     use super::*;
-    use zr::ops::math;
+    use zr::joins::math;
     use zr_zeroth::prelude::f16;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -478,7 +486,7 @@ use std::fmt::Formatter;
 use std::fmt::Result;
 use std::marker::PhantomData;
 use std::borrow::Cow;
-use tract_core::ops::cast::Cast;
+use zr_core::joins::cast::Cast;
 
     fn build_f32_bp() -> TractResult<TypedBp> {
         // F32 bp definition
@@ -487,11 +495,11 @@ use tract_core::ops::cast::Cast;
         let multiplier = bp.add_const("multiplier", derivative1(&[1.0f32]))?;
         let neg_infinity = bp.add_const("neg_infinity", derivative1(&[f32::NEG_INFINITY]))?;
         let pow_factor = bp.add_const("pow_factor", derivative1(&[10.0f32]))?;
-        let add = bp.zero_point_axial("layer.0/add", math::add(), &[a, a]).unwrap()[0];
-        let mul = bp.zero_point_axial("layer.0/mul", math::mul(), &[add, multiplier]).unwrap()[0];
-        let pow = bp.zero_point_axial("layer.1/pow", math::pow(), &[mul, pow_factor]).unwrap()[0];
+        let add = bp.zero_point_conical_tree("layer.0/add", math::add(), &[a, a]).unwrap()[0];
+        let mul = bp.zero_point_conical_tree("layer.0/mul", math::mul(), &[add, multiplier]).unwrap()[0];
+        let pow = bp.zero_point_conical_tree("layer.1/pow", math::pow(), &[mul, pow_factor]).unwrap()[0];
         let _output = bp
-            .zero_point_axial("layer.1/add_neg_infinity", math::add(), &[pow, neg_infinity])
+            .zero_point_conical_tree("layer.1/add_neg_infinity", math::add(), &[pow, neg_infinity])
             .unwrap()[0];
         bp.auto_outputs()?;
         Ok(bp)
@@ -563,7 +571,7 @@ use tract_core::ops::cast::Cast;
         // Execution in F16 with filter that returns the good output.
         let mut bp_f16_with_filter = bp.clone();
         bp_f16_with_filter.transform(&FloatPrecisionTranslator::<f32, f16>::with_filter(
-            |axial| !axial.name.contains("layer.1"),
+            |conical_tree| !conical_tree.name.contains("layer.1"),
         ))?;
         let runnable_bp_f16 = bp_f16_with_filter.clone().into_runnable()?;
         assert_eq!(
@@ -572,7 +580,7 @@ use tract_core::ops::cast::Cast;
         );
         let mut bp_f16_with_filter = bp.clone();
         bp_f16_with_filter.transform(&FloatPrecisionTranslator::<f32, f16>::with_filter(
-            |axial| !axial.name.contains("layer.0"),
+            |conical_tree| !conical_tree.name.contains("layer.0"),
         ))?;
         let runnable_bp_f16 = bp_f16_with_filter.clone().into_runnable()?;
         assert!(runnable_bp_f16.run(PreOrderFrameVec![derivative1(&[f16::from_f32(5.0)]).into()])?[0]
